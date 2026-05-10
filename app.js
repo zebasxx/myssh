@@ -54,6 +54,8 @@ const defaultState = {
 const els = {
   treeRoot: document.querySelector("#treeRoot"),
   searchInput: document.querySelector("#searchInput"),
+  selectionToggle: document.querySelector("#selectionToggle"),
+  selectionBody: document.querySelector("#selectionBody"),
   settingsToggle: document.querySelector("#settingsToggle"),
   settingsBody: document.querySelector("#settingsBody"),
   autoCopySelectionInput: document.querySelector("#autoCopySelectionInput"),
@@ -1150,6 +1152,7 @@ function fitActiveSession() {
 
 function bindEvents() {
   els.searchInput.addEventListener("input", renderTree);
+  els.selectionToggle.addEventListener("click", toggleSelection);
   els.settingsToggle.addEventListener("click", toggleSettings);
   els.autoCopySelectionInput.addEventListener("change", saveAutoCopySetting);
   els.rightClickPasteInput.addEventListener("change", saveRightClickPasteSetting);
@@ -1184,6 +1187,11 @@ function render() {
   renderDetails();
   renderSettings();
   renderSessions();
+}
+
+function toggleSelection() {
+  const isHidden = els.selectionBody.classList.toggle("hidden");
+  els.selectionToggle.setAttribute("aria-expanded", String(!isHidden));
 }
 
 function toggleSettings() {

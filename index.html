@@ -26,17 +26,22 @@
         </header>
 
         <section class="selection-panel" aria-label="Selected item summary">
-          <div>
+          <button class="selection-toggle" id="selectionToggle" type="button" aria-expanded="true">
             <p class="eyebrow" id="selectionType">Connection</p>
-            <h2 id="selectionTitle">Production API</h2>
-            <p id="selectionSubtitle">ubuntu@api.example.com:22</p>
-          </div>
-          <div class="header-actions">
-            <button class="primary-button" id="connectButton" type="button">Connect</button>
-            <button class="secondary-button" id="editButton" type="button">Edit</button>
-            <button class="secondary-button" id="duplicateButton" type="button">Duplicate</button>
-            <select class="duplicate-name-select hidden" id="duplicateNameSelect" aria-label="Duplicate name option"></select>
-            <button class="danger-button" id="deleteButton" type="button">Delete</button>
+            <span class="toggle-icon" aria-hidden="true">v</span>
+          </button>
+          <div class="selection-body" id="selectionBody">
+            <div class="selection-header">
+              <h2 id="selectionTitle">Production API</h2>
+              <p id="selectionSubtitle">ubuntu@api.example.com:22</p>
+            </div>
+            <div class="header-actions">
+              <button class="primary-button" id="connectButton" type="button">Connect</button>
+              <button class="secondary-button" id="editButton" type="button">Edit</button>
+              <button class="secondary-button" id="duplicateButton" type="button">Duplicate</button>
+              <select class="duplicate-name-select hidden" id="duplicateNameSelect" aria-label="Duplicate name option"></select>
+              <button class="danger-button" id="deleteButton" type="button">Delete</button>
+            </div>
           </div>
         </section>
 

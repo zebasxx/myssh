@@ -194,15 +194,45 @@ h3 {
   background: var(--panel);
 }
 
-.selection-panel h2 {
+.selection-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+}
+
+.selection-toggle .eyebrow {
+  margin: 0;
+}
+
+.selection-toggle .toggle-icon {
+  font-weight: 800;
+  color: var(--muted);
+}
+
+.selection-body {
+  margin-top: 10px;
+}
+
+.selection-header {
+  margin-bottom: 12px;
+}
+
+.selection-header h2 {
   overflow-wrap: anywhere;
   margin-bottom: 4px;
   font-size: 1.05rem;
   line-height: 1.2;
 }
 
-.selection-panel .header-actions {
-  margin-top: 12px;
+.selection-body .header-actions {
+  margin-top: 0;
 }
 
 .search-box input,
