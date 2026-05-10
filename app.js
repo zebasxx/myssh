@@ -1056,6 +1056,10 @@ function activateSession(id) {
   activeSessionId = id;
   persistSessions();
   renderSessions();
+  const session = sessions.get(id);
+  if (session) {
+    session.terminal.focus();
+  }
 }
 
 function closeSession(id) {
