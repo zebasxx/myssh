@@ -1,0 +1,15 @@
+services:
+  myssh:
+    build:
+      context: .
+    ports:
+      - "3000:3000"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3000
+    volumes:
+      - ssh-data:/home/node/.ssh
+    restart: unless-stopped
+
+volumes:
+  ssh-data:

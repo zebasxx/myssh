@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MySSH</title>
+    <link rel="stylesheet" href="/vendor/xterm.css" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -26,12 +27,30 @@
 
         <label class="search-box">
           <span class="visually-hidden">Search connections</span>
-          <input id="searchInput" type="search" placeholder="Search by name, host, or key" autocomplete="off" />
+          <input id="searchInput" type="search" placeholder="Search by name, host, or user" autocomplete="off" />
         </label>
 
         <nav class="tree-panel" aria-label="Saved folders and connections">
           <ul class="tree" id="treeRoot"></ul>
         </nav>
+
+        <section class="settings-panel" aria-label="Settings">
+          <button class="settings-toggle" id="settingsToggle" type="button" aria-expanded="false">
+            <span>Settings</span>
+            <span aria-hidden="true">v</span>
+          </button>
+          <div class="settings-body hidden" id="settingsBody">
+            <label class="check-row">
+              <input id="autoCopySelectionInput" type="checkbox" />
+              <span>Copy terminal selection automatically</span>
+            </label>
+            <label class="check-row">
+              <input id="rightClickPasteInput" type="checkbox" />
+              <span>Paste clipboard on right click</span>
+            </label>
+            <p class="status-text" id="settingsStatus" aria-live="polite"></p>
+          </div>
+        </section>
       </aside>
 
       <main class="workspace">
@@ -42,12 +61,32 @@
             <p id="selectionSubtitle">ubuntu@api.example.com:22</p>
           </div>
           <div class="header-actions">
+            <button class="primary-button" id="connectButton" type="button">Connect</button>
+            <button class="secondary-button" id="editButton" type="button">Edit</button>
             <button class="secondary-button" id="duplicateButton" type="button">Duplicate</button>
             <button class="danger-button" id="deleteButton" type="button">Delete</button>
           </div>
         </section>
 
-        <section class="editor-area">
+        <section class="terminal-workspace" aria-label="SSH sessions">
+          <div class="session-tabs" id="sessionTabs" role="tablist" aria-label="Active SSH sessions"></div>
+          <div class="terminal-stack" id="terminalStack"></div>
+          <section class="terminal-empty" id="terminalEmpty">
+            <p class="eyebrow">Terminal</p>
+            <h2>No active sessions</h2>
+            <p>Select a saved connection on the left and press Connect.</p>
+          </section>
+        </section>
+
+        <section class="editor-panel hidden" id="editorPanel" aria-label="Connection editor">
+          <div class="editor-panel-header">
+            <div>
+              <p class="eyebrow" id="editorType">Editor</p>
+              <h3 id="editorTitle">Edit connection</h3>
+            </div>
+            <button class="secondary-button" id="closeEditorButton" type="button">Close</button>
+          </div>
+
           <form class="editor-form" id="connectionForm" autocomplete="off">
             <div class="form-grid">
               <label>
@@ -71,10 +110,21 @@
                 <input id="userInput" name="username" type="text" placeholder="root, ubuntu, admin..." />
               </label>
               <label>
-                <span>Private key path</span>
-                <input id="keyInput" name="privateKey" type="text" placeholder="~/.ssh/id_ed25519" required />
+                <span>Key passphrase</span>
+                <input id="passphraseInput" name="privateKeyPassphrase" type="password" autocomplete="off" placeholder="Optional" />
               </label>
             </div>
+            <label class="wide-field">
+              <span>Private key</span>
+              <textarea
+                id="keyInput"
+                name="privateKeyContent"
+                rows="8"
+                spellcheck="false"
+                placeholder="Paste the full private key, including BEGIN and END lines"
+                required
+              ></textarea>
+            </label>
             <label class="wide-field">
               <span>Notes</span>
               <textarea id="notesInput" name="notes" rows="5" placeholder="Environment, jump host, rotation notes..."></textarea>
@@ -85,7 +135,7 @@
             </div>
           </form>
 
-          <section class="command-panel" aria-label="SSH command preview">
+          <section class="command-panel" id="commandPanel" aria-label="SSH command preview">
             <div class="command-header">
               <div>
                 <p class="eyebrow">Command</p>
@@ -95,9 +145,7 @@
             </div>
             <pre id="commandPreview" tabindex="0"></pre>
           </section>
-        </section>
 
-        <section class="folder-editor hidden" id="folderEditor" aria-label="Folder editor">
           <form id="folderForm" class="folder-form">
             <label>
               <span>Folder name</span>
@@ -109,15 +157,11 @@
             </div>
           </form>
         </section>
-
-        <section class="empty-state hidden" id="emptyState">
-          <p class="eyebrow">Ready</p>
-          <h2>No item selected</h2>
-          <p>Create a folder or connection from the left panel to start organizing your servers.</p>
-        </section>
       </main>
     </div>
 
+    <script src="/vendor/xterm.js"></script>
+    <script src="/vendor/xterm-addon-fit.js"></script>
     <script src="./app.js"></script>
   </body>
 </html>

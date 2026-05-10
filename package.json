@@ -1,0 +1,15 @@
+{
+  "name": "myssh",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A local SSH connection manager with an embedded browser terminal.",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "node-pty": "^1.1.0",
+    "ws": "^8.20.0"
+  }
+}
