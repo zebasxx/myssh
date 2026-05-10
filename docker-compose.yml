@@ -1,4 +1,20 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: myssh
+      POSTGRES_USER: myssh
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U myssh"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   myssh:
     build:
       context: .
@@ -7,9 +23,29 @@ services:
     environment:
       HOST: 0.0.0.0
       PORT: 3000
+      NODE_ENV: ${NODE_ENV:-production}
+      # Database
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: myssh
+      POSTGRES_USER: myssh
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # Microsoft Entra ID (Azure AD)
+      ENTRA_CLIENT_ID: ${ENTRA_CLIENT_ID}
+      ENTRA_CLIENT_SECRET: ${ENTRA_CLIENT_SECRET}
+      ENTRA_TENANT_ID: ${ENTRA_TENANT_ID}
+      ENTRA_REDIRECT_URI: ${ENTRA_REDIRECT_URI:-http://localhost:3000/auth/callback}
+      # Session secret for cookie signing
+      SESSION_SECRET: ${SESSION_SECRET}
+      # Base URL for the application
+      BASE_URL: ${BASE_URL:-http://localhost:3000}
     volumes:
       - ssh-data:/home/node/.ssh
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
+  postgres-data:
   ssh-data:

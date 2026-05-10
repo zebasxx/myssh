@@ -5,6 +5,23 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const pty = require("node-pty");
 const { WebSocketServer } = require("ws");
+const cookieParser = require("cookie-parser");
+const { getAuthUrl, acquireTokenByCode } = require("./auth/entra");
+const { createSession, getSession, destroySession } = require("./auth/session");
+const { generateWsToken, validateWsToken } = require("./auth/ws-token");
+const { requireAuth, attachUser } = require("./middleware/auth");
+const { findOrCreateUser, getUserById } = require("./services/users");
+const { logAuditEvent } = require("./services/audit");
+const { migrate } = require("./db/migrate");
+const {
+  listConnections,
+  getConnection,
+  createConnection,
+  updateConnection,
+  deleteConnection,
+} = require("./services/connections");
+const { listFolders, getFolder, createFolder, updateFolder, deleteFolder } = require("./services/folders");
+const { getSettings, updateSettings } = require("./services/settings");
 
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || "127.0.0.1";
@@ -34,8 +51,450 @@ const publicFiles = new Map([
   ["/styles.css", path.join(ROOT, "styles.css")],
 ]);
 
-const server = http.createServer((req, res) => {
+// Helper to parse cookies
+function parseCookies(cookieHeader) {
+  const cookies = {};
+  if (cookieHeader) {
+    cookieHeader.split(";").forEach((cookie) => {
+      const [name, ...rest] = cookie.split("=");
+      cookies[name.trim()] = rest.join("=").trim();
+    });
+  }
+  return cookies;
+}
+
+// Helper to parse JSON body
+async function parseBody(req) {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    req.on("data", (chunk) => (body += chunk.toString()));
+    req.on("end", () => {
+      try {
+        resolve(body ? JSON.parse(body) : {});
+      } catch (error) {
+        reject(error);
+      }
+    });
+    req.on("error", reject);
+  });
+}
+
+const server = http.createServer(async (req, res) => {
   const requestUrl = new URL(req.url, `http://${req.headers.host}`);
+  req.cookies = parseCookies(req.headers.cookie);
+
+  // Health check endpoint
+  if (requestUrl.pathname === "/health" && req.method === "GET") {
+    res.writeHead(200, { "content-type": "text/plain" });
+    res.end("OK");
+    return;
+  }
+
+  // Authentication routes
+  if (requestUrl.pathname === "/auth/login" && req.method === "GET") {
+    try {
+      const state = crypto.randomBytes(16).toString("hex");
+      const authUrl = await getAuthUrl(state);
+      res.writeHead(302, { Location: authUrl });
+      res.end();
+    } catch (error) {
+      console.error("Login error:", error);
+      res.writeHead(500, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "Authentication failed" }));
+    }
+    return;
+  }
+
+  if (requestUrl.pathname === "/auth/callback" && req.method === "GET") {
+    try {
+      const code = requestUrl.searchParams.get("code");
+      if (!code) {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: "Missing authorization code" }));
+        return;
+      }
+
+      const tokenResponse = await acquireTokenByCode(code);
+      const entraProfile = {
+        oid: tokenResponse.account.homeAccountId.split(".")[0],
+        email: tokenResponse.account.username,
+        name: tokenResponse.account.name,
+      };
+
+      const user = await findOrCreateUser(entraProfile);
+      const sessionId = createSession(user);
+
+      const cookieFlags = process.env.NODE_ENV === "production" ? "; Secure" : "";
+      res.writeHead(302, {
+        Location: "/",
+        "Set-Cookie": `myssh_session=${sessionId}; HttpOnly; SameSite=Lax; Max-Age=86400; Path=/${cookieFlags}`,
+      });
+      res.end();
+
+      await logAuditEvent({
+        userId: user.id,
+        action: "LOGIN",
+        ipAddress: req.headers["x-forwarded-for"] || req.socket.remoteAddress,
+        userAgent: req.headers["user-agent"],
+      });
+    } catch (error) {
+      console.error("Callback error:", error);
+      res.writeHead(500, { "content-type": "text/html" });
+      res.end("<h1>Authentication failed</h1><p>Please try again.</p>");
+    }
+    return;
+  }
+
+  if (requestUrl.pathname === "/auth/logout" && req.method === "POST") {
+    const sessionId = req.cookies.myssh_session;
+    const session = getSession(sessionId);
+
+    if (session) {
+      await logAuditEvent({
+        userId: session.userId,
+        action: "LOGOUT",
+        ipAddress: req.headers["x-forwarded-for"] || req.socket.remoteAddress,
+        userAgent: req.headers["user-agent"],
+      });
+      destroySession(sessionId);
+    }
+
+    const cookieFlags = process.env.NODE_ENV === "production" ? "; Secure" : "";
+    res.writeHead(200, {
+      "content-type": "application/json",
+      "Set-Cookie": `myssh_session=; HttpOnly; SameSite=Lax; Max-Age=0; Path=/${cookieFlags}`,
+    });
+    res.end(JSON.stringify({ success: true }));
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/auth/status" && req.method === "GET") {
+    const sessionId = req.cookies.myssh_session;
+    const session = getSession(sessionId);
+
+    if (!session) {
+      res.writeHead(401, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "Unauthorized" }));
+      return;
+    }
+
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(
+      JSON.stringify({
+        userId: session.userId,
+        email: session.email,
+        displayName: session.displayName,
+      }),
+    );
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/auth/ws-token" && req.method === "GET") {
+    const sessionId = req.cookies.myssh_session;
+    const session = getSession(sessionId);
+
+    if (!session) {
+      res.writeHead(401, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "Unauthorized" }));
+      return;
+    }
+
+    const token = generateWsToken(sessionId, session.userId);
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ token }));
+    return;
+  }
+
+  // Connections API
+  if (requestUrl.pathname === "/api/connections" && req.method === "GET") {
+    const sessionId = req.cookies.myssh_session;
+    const session = getSession(sessionId);
+
+    if (!session) {
+      res.writeHead(401, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "Unauthorized" }));
+      return;
+    }
+
+    try {
+      const user = await getUserById(session.userId);
+      const connections = await listConnections(session.userId, user);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify(connections));
+    } catch (error) {
+      console.error("Error listing connections:", error);
+      res.writeHead(500, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "Failed to list connections" }));
+    }
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/connections" && req.method === "POST") {
+    const sessionId = req.cookies.myssh_session;
+    const session = getSession(sessionId);
+
+    if (!session) {
+      res.writeHead(401, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "Unauthorized" }));
+      return;
+    }
+
+    try {
+      const connection = await parseBody(req);
+      const user = await getUserById(session.userId);
+      const connectionId = await createConnection(session.userId, connection, user);
+
+      await logAuditEvent({
+        userId: session.userId,
+        action: "CREATE_CONNECTION",
+        resourceType: "connection",
+        resourceId: connectionId,
+        ipAddress: req.headers["x-forwarded-for"] || req.socket.remoteAddress,
+        metadata: { name: connection.name, host: connection.host },
+      });
+
+      res.writeHead(201, { "content-type": "application/json" });
+      res.end(JSON.stringify({ id: connectionId }));
+    } catch (error) {
+      console.error("Error creating connection:", error);
+      res.writeHead(500, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "Failed to create connection" }));
+    }
+    return;
+  }
+
+  if (requestUrl.pathname.startsWith("/api/connections/") && req.method === "PUT") {
+    const sessionId = req.cookies.myssh_session;
+    const session = getSession(sessionId);
+
+    if (!session) {
+      res.writeHead(401, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "Unauthorized" }));
+      return;
+    }
+
+    try {
+      const connectionId = requestUrl.pathname.split("/")[3];
+      const connection = await parseBody(req);
+      const user = await getUserById(session.userId);
+      const success = await updateConnection(session.userId, connectionId, connection, user);
+
+      if (!success) {
+        res.writeHead(404, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: "Connection not found" }));
+        return;
+      }
+
+      await logAuditEvent({
+        userId: session.userId,
+        action: "UPDATE_CONNECTION",
+        resourceType: "connection",
+        resourceId: connectionId,
+        ipAddress: req.headers["x-forwarded-for"] || req.socket.remoteAddress,
+      });
+
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ success: true }));
+    } catch (error) {
+      console.error("Error updating connection:", error);
+      res.writeHead(500, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "Failed to update connection" }));
+    }
+    return;
+  }
+
+  if (requestUrl.pathname.startsWith("/api/connections/") && req.method === "DELETE") {
+    const sessionId = req.cookies.myssh_session;
+    const session = getSession(sessionId);
+
+    if (!session) {
+      res.writeHead(401, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "Unauthorized" }));
+      return;
+    }
+
+    try {
+      const connectionId = requestUrl.pathname.split("/")[3];
+      const success = await deleteConnection(session.userId, connectionId);
+
+      if (!success) {
+        res.writeHead(404, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: "Connection not found" }));
+        return;
+      }
+
+      await logAuditEvent({
+        userId: session.userId,
+        action: "DELETE_CONNECTION",
+        resourceType: "connection",
+        resourceId: connectionId,
+        ipAddress: req.headers["x-forwarded-for"] || req.socket.remoteAddress,
+      });
+
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ success: true }));
+    } catch (error) {
+      console.error("Error deleting connection:", error);
+      res.writeHead(500, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "Failed to delete connection" }));
+    }
+    return;
+  }
+
+  // Folders API
+  if (requestUrl.pathname === "/api/folders" && req.method === "GET") {
+    const sessionId = req.cookies.myssh_session;
+    const session = getSession(sessionId);
+
+    if (!session) {
+      res.writeHead(401, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "Unauthorized" }));
+      return;
+    }
+
+    try {
+      const folders = await listFolders(session.userId);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify(folders));
+    } catch (error) {
+      console.error("Error listing folders:", error);
+      res.writeHead(500, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "Failed to list folders" }));
+    }
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/folders" && req.method === "POST") {
+    const sessionId = req.cookies.myssh_session;
+    const session = getSession(sessionId);
+
+    if (!session) {
+      res.writeHead(401, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "Unauthorized" }));
+      return;
+    }
+
+    try {
+      const folder = await parseBody(req);
+      const folderId = await createFolder(session.userId, folder);
+      res.writeHead(201, { "content-type": "application/json" });
+      res.end(JSON.stringify({ id: folderId }));
+    } catch (error) {
+      console.error("Error creating folder:", error);
+      res.writeHead(500, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "Failed to create folder" }));
+    }
+    return;
+  }
+
+  if (requestUrl.pathname.startsWith("/api/folders/") && req.method === "PUT") {
+    const sessionId = req.cookies.myssh_session;
+    const session = getSession(sessionId);
+
+    if (!session) {
+      res.writeHead(401, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "Unauthorized" }));
+      return;
+    }
+
+    try {
+      const folderId = requestUrl.pathname.split("/")[3];
+      const folder = await parseBody(req);
+      const success = await updateFolder(session.userId, folderId, folder);
+
+      if (!success) {
+        res.writeHead(404, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: "Folder not found" }));
+        return;
+      }
+
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ success: true }));
+    } catch (error) {
+      console.error("Error updating folder:", error);
+      res.writeHead(500, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "Failed to update folder" }));
+    }
+    return;
+  }
+
+  if (requestUrl.pathname.startsWith("/api/folders/") && req.method === "DELETE") {
+    const sessionId = req.cookies.myssh_session;
+    const session = getSession(sessionId);
+
+    if (!session) {
+      res.writeHead(401, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "Unauthorized" }));
+      return;
+    }
+
+    try {
+      const folderId = requestUrl.pathname.split("/")[3];
+      const success = await deleteFolder(session.userId, folderId);
+
+      if (!success) {
+        res.writeHead(404, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: "Folder not found" }));
+        return;
+      }
+
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ success: true }));
+    } catch (error) {
+      console.error("Error deleting folder:", error);
+      res.writeHead(500, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "Failed to delete folder" }));
+    }
+    return;
+  }
+
+  // Settings API
+  if (requestUrl.pathname === "/api/settings" && req.method === "GET") {
+    const sessionId = req.cookies.myssh_session;
+    const session = getSession(sessionId);
+
+    if (!session) {
+      res.writeHead(401, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "Unauthorized" }));
+      return;
+    }
+
+    try {
+      const settings = await getSettings(session.userId);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify(settings));
+    } catch (error) {
+      console.error("Error getting settings:", error);
+      res.writeHead(500, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "Failed to get settings" }));
+    }
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/settings" && req.method === "PUT") {
+    const sessionId = req.cookies.myssh_session;
+    const session = getSession(sessionId);
+
+    if (!session) {
+      res.writeHead(401, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "Unauthorized" }));
+      return;
+    }
+
+    try {
+      const settings = await parseBody(req);
+      await updateSettings(session.userId, settings);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ success: true }));
+    } catch (error) {
+      console.error("Error updating settings:", error);
+      res.writeHead(500, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "Failed to update settings" }));
+    }
+    return;
+  }
+
+  // Static file serving
   const filePath = resolveStaticPath(requestUrl.pathname);
 
   if (!filePath) {
@@ -61,7 +520,21 @@ const server = http.createServer((req, res) => {
 });
 
 const wss = new WebSocketServer({ noServer: true });
-const sshSessions = new Map();
+
+// User-scoped SSH sessions: Map<userId, Map<sessionId, session>>
+const userSessions = new Map();
+
+/**
+ * Gets user's session map
+ * @param {string} userId - User UUID
+ * @returns {Map} User's session map
+ */
+function getUserSessions(userId) {
+  if (!userSessions.has(userId)) {
+    userSessions.set(userId, new Map());
+  }
+  return userSessions.get(userId);
+}
 
 server.on("upgrade", (req, socket, head) => {
   const requestUrl = new URL(req.url, `http://${req.headers.host}`);
@@ -70,13 +543,29 @@ server.on("upgrade", (req, socket, head) => {
     return;
   }
 
+  // Validate WebSocket token
+  const token = requestUrl.searchParams.get("token");
+  const tokenData = validateWsToken(token);
+
+  if (!tokenData) {
+    console.error("WebSocket upgrade denied: invalid or expired token");
+    socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+    socket.destroy();
+    return;
+  }
+
+  // Attach user info to request for WebSocket handler
+  req.user = tokenData;
+
   wss.handleUpgrade(req, socket, head, (ws) => {
     wss.emit("connection", ws, req);
   });
 });
 
-wss.on("connection", (ws) => {
+wss.on("connection", (ws, req) => {
   let session = null;
+  const userId = req.user.userId; // From WebSocket token validation
+  const userSessionsMap = getUserSessions(userId);
 
   ws.on("message", (rawMessage) => {
     const message = parseJson(rawMessage);
@@ -89,7 +578,14 @@ wss.on("connection", (ws) => {
       if (session) {
         detachClient(session, ws);
       }
-      session = startSsh(ws, message.connection, message.cols, message.rows, message.clientSessionId);
+      session = startSsh(
+        ws,
+        message.connection,
+        message.cols,
+        message.rows,
+        message.clientSessionId,
+        userId,
+      );
       if (session) {
         attachClient(session, ws);
       }
@@ -100,9 +596,16 @@ wss.on("connection", (ws) => {
       if (session) {
         detachClient(session, ws);
       }
-      session = sshSessions.get(String(message.sessionId)) || null;
+      // Only allow attaching to user's own sessions
+      session = userSessionsMap.get(String(message.sessionId)) || null;
       if (!session) {
         send(ws, { type: "missing", sessionId: message.sessionId });
+        return;
+      }
+      // Verify session belongs to this user
+      if (session.userId !== userId) {
+        send(ws, { type: "error", message: "Unauthorized access to session." });
+        ws.close();
         return;
       }
       attachClient(session, ws, message.cols, message.rows);
@@ -110,18 +613,34 @@ wss.on("connection", (ws) => {
     }
 
     if (message.type === "input" && session) {
+      // Verify session still belongs to this user
+      if (session.userId !== userId) {
+        send(ws, { type: "error", message: "Unauthorized." });
+        ws.close();
+        return;
+      }
       session.term.write(String(message.data || ""));
       return;
     }
 
     if (message.type === "resize" && session) {
+      if (session.userId !== userId) {
+        send(ws, { type: "error", message: "Unauthorized." });
+        ws.close();
+        return;
+      }
       session.term.resize(safeDimension(message.cols, 80), safeDimension(message.rows, 24));
       return;
     }
 
     if (message.type === "disconnect" && session) {
+      if (session.userId !== userId) {
+        send(ws, { type: "error", message: "Unauthorized." });
+        ws.close();
+        return;
+      }
       stopSession(session);
-      sshSessions.delete(session.id);
+      userSessionsMap.delete(session.id);
       session = null;
       send(ws, { type: "status", message: "Disconnected.", connected: false });
     }
@@ -135,9 +654,24 @@ wss.on("connection", (ws) => {
   });
 });
 
-server.listen(PORT, HOST, () => {
-  console.log(`MySSH running at http://localhost:${PORT}`);
-});
+// Start server with database migration
+async function startServer() {
+  try {
+    // Run database migrations
+    await migrate();
+
+    // Start HTTP server
+    server.listen(PORT, HOST, () => {
+      console.log(`MySSH running at ${process.env.BASE_URL || `http://localhost:${PORT}`}`);
+      console.log(`Environment: ${process.env.NODE_ENV || "development"}`);
+    });
+  } catch (error) {
+    console.error("Failed to start server:", error);
+    process.exit(1);
+  }
+}
+
+startServer();
 
 function resolveStaticPath(pathname) {
   if (vendorFiles.has(pathname)) {
@@ -148,7 +682,7 @@ function resolveStaticPath(pathname) {
   return publicFiles.get(normalized) || null;
 }
 
-function startSsh(ws, connection, cols, rows, requestedSessionId) {
+function startSsh(ws, connection, cols, rows, requestedSessionId, userId) {
   const validationError = validateConnection(connection);
   if (validationError) {
     send(ws, { type: "error", message: validationError });
@@ -169,6 +703,7 @@ function startSsh(ws, connection, cols, rows, requestedSessionId) {
 
   const session = {
     id,
+    userId, // Store user ownership
     term,
     keyPath,
     connection: publicConnection(connection),
@@ -178,7 +713,24 @@ function startSsh(ws, connection, cols, rows, requestedSessionId) {
     status: `Connected to ${connection.host}.`,
     cleanupTimer: null,
   };
-  sshSessions.set(id, session);
+
+  // Store in user-scoped map
+  const userSessionsMap = getUserSessions(userId);
+  userSessionsMap.set(id, session);
+
+  // Audit log SSH connection
+  logAuditEvent({
+    userId,
+    action: "SSH_CONNECT",
+    resourceType: "session",
+    resourceId: id,
+    metadata: {
+      host: connection.host,
+      port: connection.port,
+      username: connection.username,
+      connectionName: connection.name,
+    },
+  }).catch((err) => console.error("Audit log error:", err));
 
   term.onData((data) => {
     appendSessionBuffer(session, data);
@@ -194,7 +746,20 @@ function startSsh(ws, connection, cols, rows, requestedSessionId) {
     session.connected = false;
     session.status = `Disconnected${Number.isInteger(exitCode) ? ` with code ${exitCode}` : ""}.`;
     broadcast(session, { type: "exit", code: exitCode });
-    scheduleSessionCleanup(session);
+    scheduleSessionCleanup(session, userId);
+
+    // Audit log SSH disconnection
+    logAuditEvent({
+      userId,
+      action: "SSH_DISCONNECT",
+      resourceType: "session",
+      resourceId: id,
+      metadata: {
+        exitCode,
+        host: connection.host,
+        connectionName: connection.name,
+      },
+    }).catch((err) => console.error("Audit log error:", err));
   });
 
   return session;
@@ -219,16 +784,17 @@ function attachClient(session, ws, cols, rows) {
 
 function detachClient(session, ws) {
   session.clients.delete(ws);
-  scheduleSessionCleanup(session);
+  scheduleSessionCleanup(session, session.userId);
 }
 
-function scheduleSessionCleanup(session) {
+function scheduleSessionCleanup(session, userId) {
   if (session.clients.size > 0 || session.cleanupTimer) {
     return;
   }
   session.cleanupTimer = setTimeout(() => {
     stopSession(session);
-    sshSessions.delete(session.id);
+    const userSessionsMap = getUserSessions(userId);
+    userSessionsMap.delete(session.id);
   }, SESSION_TTL_MS);
 }
 

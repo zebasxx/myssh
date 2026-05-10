@@ -7,9 +7,13 @@
     "start": "node server.js"
   },
   "dependencies": {
+    "@azure/msal-node": "^2.15.0",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
+    "cookie-parser": "^1.4.7",
+    "express-rate-limit": "^7.4.1",
     "node-pty": "^1.1.0",
+    "pg": "^8.13.1",
     "ws": "^8.20.0"
   }
 }

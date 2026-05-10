@@ -1,45 +1,67 @@
 # MySSH
 
-A small local SSH connection manager. It stores folders and connection settings in browser `localStorage` and opens SSH sessions in an embedded terminal through a local Node server.
+A multi-user enterprise SSH connection manager with Microsoft Entra ID (Azure AD) authentication. It securely stores encrypted SSH credentials in PostgreSQL and provides browser-based terminal access to SSH hosts.
 
-## Run
+## Quick Start
 
-### Local Node
+### Prerequisites
+
+- Docker and Docker Compose
+- Microsoft Entra ID tenant
+- HTTPS-enabled domain (for production)
+
+### Setup
+
+1. **Register Azure AD App** - See [docs/SETUP.md](docs/SETUP.md) for detailed instructions
+2. **Configure environment** - Copy `.env.example` to `.env` and fill in your values
+3. **Start services**:
 
 ```bash
-npm install
-npm start
+docker compose up -d
 ```
 
-Then open `http://localhost:3000`.
+4. **Access**: Navigate to your configured URL (e.g., `https://myssh.argostranslations.com`)
+5. **Login**: Sign in with Microsoft
 
-### Docker Compose
+### Security
 
-```bash
-docker compose up --build
-```
+- **Private keys encrypted at rest** using AES-256-GCM with per-user derived keys
+- **Microsoft Entra ID authentication** with session-based cookies
+- **User isolation** - each user can only access their own connections
+- **Audit logging** for compliance tracking
+- **HTTPS required** in production
 
-Then open `http://localhost:3000`.
-
-Paste the full private key content into the connection editor. If the key is encrypted, you can also save its passphrase in the optional key passphrase field. The server writes the key to a temporary `0600` file inside the container only while the SSH session is starting, answers the key passphrase prompt when needed, and removes the temporary key when the session closes.
-
-Connection data is stored in browser `localStorage`, including embedded keys and saved passphrases. Use this only on a trusted local machine and browser profile.
-
-The compose setup uses a named volume at `/home/node/.ssh` so SSH can persist metadata such as `known_hosts`. It does not need access to private key files on the host.
+The compose setup uses:
+- **PostgreSQL volume** for encrypted connection storage
+- **SSH metadata volume** at `/home/node/.ssh` for `known_hosts` persistence
+- **Named volumes** persist across container restarts
 
 New SSH host keys are accepted automatically with OpenSSH `StrictHostKeyChecking=accept-new`. Changed host keys still fail, as they should.
 
-Open terminal tabs are restored after a browser refresh or after closing and reopening the browser while the Docker container is still running. Detached SSH sessions stay alive on the server for 30 minutes by default; restarting the container ends them.
+Open terminal tabs are restored after a browser refresh while the server is still running. Detached SSH sessions stay alive for 30 minutes by default.
 
 ## Features
 
-- Folder tree for organizing SSH connections
-- Connection editor with name, DNS/IP, port, username, embedded private key, and optional key passphrase
-- SSH command preview with copy action
-- Tabbed embedded terminals for multiple simultaneous SSH sessions
-- Browser refresh reattaches to active SSH tabs while the server process is still running
-- Setting to copy selected terminal text to the clipboard automatically
-- Setting to paste clipboard text into the active terminal with right click
-- Duplicate action suggests `- copy` and number-increment naming options
-- Duplicate and delete actions
-- Search across names, hosts, and usernames
+### Authentication & Security
+- **Microsoft Entra ID (Azure AD) SSO** - Enterprise authentication
+- **Encrypted storage** - Private keys encrypted at rest with AES-256-GCM
+- **Per-user encryption keys** - Derived from user identity
+- **User isolation** - Complete data separation between users
+- **Audit logging** - Track all authentication and SSH connections
+- **Session management** - Secure cookie-based sessions
+
+### SSH Management
+- **Folder tree** for organizing SSH connections
+- **Connection editor** with host, port, username, private key, and passphrase
+- **SSH command preview** with copy action
+- **Tabbed terminals** for multiple simultaneous SSH sessions
+- **Session persistence** - Reattach to active sessions after browser refresh
+- **Auto-passphrase** - Encrypted passphrases auto-submitted to SSH
+- **Search** across names, hosts, and usernames
+- **Duplicate** connections with smart naming
+
+### Terminal Features
+- **xterm.js** - Full-featured browser terminal
+- **Auto-copy selection** - Optional automatic clipboard copy
+- **Right-click paste** - Optional clipboard paste on right-click
+- **Responsive design** - Scales to browser window
