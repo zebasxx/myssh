@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MySSH</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Connection library">
+        <header class="sidebar-header">
+          <div>
+            <p class="eyebrow">MySSH</p>
+            <h1>Connections</h1>
+          </div>
+          <div class="toolbar" aria-label="Library actions">
+            <button class="icon-button" id="addFolderButton" type="button" title="New folder" aria-label="New folder">
+              <span aria-hidden="true">+</span>
+            </button>
+            <button class="icon-button" id="addConnectionButton" type="button" title="New connection" aria-label="New connection">
+              <span aria-hidden="true">#</span>
+            </button>
+          </div>
+        </header>
+
+        <label class="search-box">
+          <span class="visually-hidden">Search connections</span>
+          <input id="searchInput" type="search" placeholder="Search by name, host, or key" autocomplete="off" />
+        </label>
+
+        <nav class="tree-panel" aria-label="Saved folders and connections">
+          <ul class="tree" id="treeRoot"></ul>
+        </nav>
+      </aside>
+
+      <main class="workspace">
+        <section class="workspace-header" aria-label="Selected item summary">
+          <div>
+            <p class="eyebrow" id="selectionType">Connection</p>
+            <h2 id="selectionTitle">Production API</h2>
+            <p id="selectionSubtitle">ubuntu@api.example.com:22</p>
+          </div>
+          <div class="header-actions">
+            <button class="secondary-button" id="duplicateButton" type="button">Duplicate</button>
+            <button class="danger-button" id="deleteButton" type="button">Delete</button>
+          </div>
+        </section>
+
+        <section class="editor-area">
+          <form class="editor-form" id="connectionForm" autocomplete="off">
+            <div class="form-grid">
+              <label>
+                <span>Name</span>
+                <input id="nameInput" name="name" type="text" required />
+              </label>
+              <label>
+                <span>Folder</span>
+                <select id="folderInput" name="folderId"></select>
+              </label>
+              <label>
+                <span>DNS or IP</span>
+                <input id="hostInput" name="host" type="text" required />
+              </label>
+              <label>
+                <span>Port</span>
+                <input id="portInput" name="port" type="number" min="1" max="65535" required />
+              </label>
+              <label>
+                <span>Username</span>
+                <input id="userInput" name="username" type="text" placeholder="root, ubuntu, admin..." />
+              </label>
+              <label>
+                <span>Private key path</span>
+                <input id="keyInput" name="privateKey" type="text" placeholder="~/.ssh/id_ed25519" required />
+              </label>
+            </div>
+            <label class="wide-field">
+              <span>Notes</span>
+              <textarea id="notesInput" name="notes" rows="5" placeholder="Environment, jump host, rotation notes..."></textarea>
+            </label>
+            <div class="form-actions">
+              <p class="status-text" id="saveStatus" aria-live="polite"></p>
+              <button class="primary-button" type="submit">Save connection</button>
+            </div>
+          </form>
+
+          <section class="command-panel" aria-label="SSH command preview">
+            <div class="command-header">
+              <div>
+                <p class="eyebrow">Command</p>
+                <h3>SSH preview</h3>
+              </div>
+              <button class="secondary-button" id="copyCommandButton" type="button">Copy</button>
+            </div>
+            <pre id="commandPreview" tabindex="0"></pre>
+          </section>
+        </section>
+
+        <section class="folder-editor hidden" id="folderEditor" aria-label="Folder editor">
+          <form id="folderForm" class="folder-form">
+            <label>
+              <span>Folder name</span>
+              <input id="folderNameInput" name="folderName" type="text" required />
+            </label>
+            <div class="form-actions">
+              <p class="status-text" id="folderStatus" aria-live="polite"></p>
+              <button class="primary-button" type="submit">Save folder</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="empty-state hidden" id="emptyState">
+          <p class="eyebrow">Ready</p>
+          <h2>No item selected</h2>
+          <p>Create a folder or connection from the left panel to start organizing your servers.</p>
+        </section>
+      </main>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
