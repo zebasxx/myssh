@@ -56,7 +56,6 @@ button {
 }
 
 .sidebar-header,
-.workspace-header,
 .command-header,
 .editor-panel-header {
   display: flex;
@@ -103,10 +102,15 @@ h3 {
 }
 
 .toolbar,
-.header-actions,
 .form-actions {
   display: flex;
   align-items: center;
+  gap: 8px;
+}
+
+.header-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -148,6 +152,16 @@ h3 {
   color: var(--ink);
 }
 
+.duplicate-name-select {
+  grid-column: 1 / -1;
+  min-height: 38px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ink);
+}
+
 .danger-button {
   color: var(--danger);
 }
@@ -170,6 +184,25 @@ h3 {
 .search-box {
   display: block;
   padding: 0 18px 14px;
+}
+
+.selection-panel {
+  margin: 0 18px 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.selection-panel h2 {
+  overflow-wrap: anywhere;
+  margin-bottom: 4px;
+  font-size: 1.05rem;
+  line-height: 1.2;
+}
+
+.selection-panel .header-actions {
+  margin-top: 12px;
 }
 
 .search-box input,
@@ -337,14 +370,7 @@ button:focus-visible {
   flex-direction: column;
   min-width: 0;
   min-height: 100vh;
-  padding: 28px;
-}
-
-.workspace-header {
-  min-height: 88px;
-  margin-bottom: 22px;
-  padding-bottom: 20px;
-  border-bottom: 1px solid var(--line);
+  padding: 18px;
 }
 
 #selectionSubtitle {
@@ -594,7 +620,6 @@ pre {
 }
 
 @media (max-width: 640px) {
-  .workspace-header,
   .sidebar-header {
     align-items: flex-start;
     flex-direction: column;
@@ -604,11 +629,11 @@ pre {
     grid-template-columns: 1fr;
   }
 
-  .header-actions {
+  .selection-panel .header-actions {
     width: 100%;
   }
 
-  .header-actions button {
-    flex: 1;
+  .selection-panel .header-actions button {
+    min-width: 0;
   }
 }

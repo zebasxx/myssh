@@ -25,6 +25,21 @@
           </div>
         </header>
 
+        <section class="selection-panel" aria-label="Selected item summary">
+          <div>
+            <p class="eyebrow" id="selectionType">Connection</p>
+            <h2 id="selectionTitle">Production API</h2>
+            <p id="selectionSubtitle">ubuntu@api.example.com:22</p>
+          </div>
+          <div class="header-actions">
+            <button class="primary-button" id="connectButton" type="button">Connect</button>
+            <button class="secondary-button" id="editButton" type="button">Edit</button>
+            <button class="secondary-button" id="duplicateButton" type="button">Duplicate</button>
+            <select class="duplicate-name-select hidden" id="duplicateNameSelect" aria-label="Duplicate name option"></select>
+            <button class="danger-button" id="deleteButton" type="button">Delete</button>
+          </div>
+        </section>
+
         <label class="search-box">
           <span class="visually-hidden">Search connections</span>
           <input id="searchInput" type="search" placeholder="Search by name, host, or user" autocomplete="off" />
@@ -54,20 +69,6 @@
       </aside>
 
       <main class="workspace">
-        <section class="workspace-header" aria-label="Selected item summary">
-          <div>
-            <p class="eyebrow" id="selectionType">Connection</p>
-            <h2 id="selectionTitle">Production API</h2>
-            <p id="selectionSubtitle">ubuntu@api.example.com:22</p>
-          </div>
-          <div class="header-actions">
-            <button class="primary-button" id="connectButton" type="button">Connect</button>
-            <button class="secondary-button" id="editButton" type="button">Edit</button>
-            <button class="secondary-button" id="duplicateButton" type="button">Duplicate</button>
-            <button class="danger-button" id="deleteButton" type="button">Delete</button>
-          </div>
-        </section>
-
         <section class="terminal-workspace" aria-label="SSH sessions">
           <div class="session-tabs" id="sessionTabs" role="tablist" aria-label="Active SSH sessions"></div>
           <div class="terminal-stack" id="terminalStack"></div>

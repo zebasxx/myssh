@@ -64,6 +64,7 @@ const els = {
   connectButton: document.querySelector("#connectButton"),
   editButton: document.querySelector("#editButton"),
   duplicateButton: document.querySelector("#duplicateButton"),
+  duplicateNameSelect: document.querySelector("#duplicateNameSelect"),
   deleteButton: document.querySelector("#deleteButton"),
   selectionType: document.querySelector("#selectionType"),
   selectionTitle: document.querySelector("#selectionTitle"),
@@ -403,6 +404,7 @@ function renderDetails() {
   els.connectButton.classList.toggle("hidden", !isConnection);
   els.editButton.classList.toggle("hidden", !hasSelection);
   els.duplicateButton.classList.toggle("hidden", !isConnection);
+  els.duplicateNameSelect.classList.add("hidden");
   els.deleteButton.classList.toggle("hidden", !hasSelection);
 
   if (!item) {
@@ -561,12 +563,64 @@ function duplicateConnection() {
     return;
   }
 
+  renderDuplicateNameOptions(item);
+}
+
+function renderDuplicateNameOptions(item) {
+  els.duplicateNameSelect.innerHTML = "";
+
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = "Choose name...";
+  els.duplicateNameSelect.append(placeholder);
+
+  for (const option of duplicateNameOptions(item.name || "Connection")) {
+    const optionEl = document.createElement("option");
+    optionEl.value = option.name;
+    optionEl.textContent = option.label;
+    els.duplicateNameSelect.append(optionEl);
+  }
+
+  els.duplicateNameSelect.classList.remove("hidden");
+  els.duplicateNameSelect.value = "";
+  els.duplicateNameSelect.focus();
+}
+
+function duplicateNameOptions(name) {
+  const options = [{ label: `${name} - copy`, name: `${name} - copy` }];
+  const seen = new Set(options.map((option) => option.name));
+  const matches = Array.from(name.matchAll(/\d+/g));
+
+  for (const match of matches) {
+    const rawNumber = match[0];
+    const nextNumber = String(Number(rawNumber) + 1).padStart(rawNumber.length, "0");
+    const nextName = `${name.slice(0, match.index)}${nextNumber}${name.slice(match.index + rawNumber.length)}`;
+    if (seen.has(nextName)) {
+      continue;
+    }
+    seen.add(nextName);
+    options.push({
+      label: `Increment ${rawNumber} -> ${nextNumber}: ${nextName}`,
+      name: nextName,
+    });
+  }
+
+  return options;
+}
+
+function duplicateConnectionWithName(name) {
+  const item = selectedItem();
+  if (!item || item.type !== "connection" || !name) {
+    return;
+  }
+
   const copy = {
     ...item,
     id: createId("conn"),
-    name: `${item.name} copy`,
+    name,
   };
   state.items.push(copy);
+  els.duplicateNameSelect.classList.add("hidden");
   selectItem(copy.id);
   openEditor();
 }
@@ -1101,6 +1155,7 @@ function bindEvents() {
   els.editButton.addEventListener("click", openEditor);
   els.closeEditorButton.addEventListener("click", closeEditor);
   els.duplicateButton.addEventListener("click", duplicateConnection);
+  els.duplicateNameSelect.addEventListener("change", () => duplicateConnectionWithName(els.duplicateNameSelect.value));
   els.deleteButton.addEventListener("click", deleteSelected);
   els.connectionForm.addEventListener("submit", saveConnection);
   els.folderForm.addEventListener("submit", saveFolder);

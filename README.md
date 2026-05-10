@@ -40,5 +40,6 @@ Open terminal tabs are restored after a browser refresh or after closing and reo
 - Browser refresh reattaches to active SSH tabs while the server process is still running
 - Setting to copy selected terminal text to the clipboard automatically
 - Setting to paste clipboard text into the active terminal with right click
+- Duplicate action suggests `- copy` and number-increment naming options
 - Duplicate and delete actions
 - Search across names, hosts, and usernames
